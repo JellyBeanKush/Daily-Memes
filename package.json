@@ -7,7 +7,7 @@
     "start": "npx tsx server.ts"
   },
   "dependencies": {
-    "@google/genai": "^0.1.1",
+    "@google/genai": "*",
     "tsx": "^4.7.1",
     "typescript": "^5.3.3",
     "@types/node": "^20.11.24"
