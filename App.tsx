@@ -107,6 +107,10 @@ const App: React.FC = () => {
         const candidates = freshMemes.slice(0, 5); 
 
         for (const candidate of candidates) {
+            // Rate limit guard
+            addLog(`Waiting 10s to respect API rate limits...`);
+            await new Promise(resolve => setTimeout(resolve, 10000));
+
             addLog(`Analyzing: ${candidate.title}...`);
             const base64 = await fetchImageAsBase64(candidate.url);
             
