@@ -75,6 +75,10 @@ const runCycle = async () => {
     // 3. Analyze and Post ONE meme
     for (const candidate of freshMemes.slice(0, 5)) {
         console.log(`Analyzing: ${candidate.title}`);
+        
+        // Rate Limit Guard: Wait 10 seconds before hitting Gemini API to avoid 429 errors
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
         const base64 = await fetchImageAsBase64(candidate.url);
 
         if (!base64) continue;
