@@ -30,8 +30,9 @@ Return a JSON object with your verdict.
   try {
     const ai = new GoogleGenAI({ apiKey });
     
+    // Using gemini-2.5-flash-preview for speed and multimodal capabilities
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-latest',
+      model: 'gemini-2.5-flash-preview',
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
