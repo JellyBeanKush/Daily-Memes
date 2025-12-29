@@ -43,7 +43,7 @@ const saveHistory = (history: UserHistory) => {
 
 // --- Bot Logic ---
 const runCycle = async () => {
-    console.log(`[${new Date().toISOString()}] Starting Bot Cycle...`);
+    console.log(`[${new Date().toISOString()}] Starting Bot Cycle (Single Mode)...`);
     
     if (!CONFIG.geminiApiKey || !CONFIG.discordBotToken || !CONFIG.discordChannelId) {
         console.error("Missing Environment Variables (API_KEY, DISCORD_TOKEN, DISCORD_CHANNEL_ID)");
@@ -72,37 +72,42 @@ const runCycle = async () => {
         return;
     }
 
-    // 3. Analyze and Post ONE meme
-    for (const candidate of freshMemes.slice(0, 5)) {
-        console.log(`Analyzing: ${candidate.title}`);
-        
-        // Rate Limit Guard: Wait 10 seconds before hitting Gemini API to avoid 429 errors
-        await new Promise(resolve => setTimeout(resolve, 10000));
+    // 3. Analyze ONLY the #1 Top Meme
+    // Strategy: Grab the best one. If it passes, post it. If it fails, mark it as "seen" (postedIds) so we skip it next time.
+    // This limits us to 1 API call per cycle, heavily reducing rate limits.
+    const candidate = freshMemes[0];
+    
+    console.log(`Analyzing Top Candidate: ${candidate.title}`);
+    
+    const base64 = await fetchImageAsBase64(candidate.url);
 
-        const base64 = await fetchImageAsBase64(candidate.url);
-
-        if (!base64) continue;
-
+    if (base64) {
         const analysis = await analyzeMeme(CONFIG.geminiApiKey, base64, candidate.title, history.dislikedTopics);
 
-        if (analysis.isAppropriate && analysis.humorScore >= 7) {
+        if (analysis.isAppropriate && analysis.humorScore >= 6) { // Slightly lowered threshold since we are only checking one
             console.log(`Approved! Score: ${analysis.humorScore}. Posting...`);
             const meme: ScoredMeme = { ...candidate, analysis, status: 'posted' };
             
             const success = await postToDiscord(CONFIG.discordBotToken, CONFIG.discordChannelId, meme);
             
             if (success) {
-                history.postedIds.push(candidate.id);
-                history.lastRunDate = new Date().toISOString();
-                saveHistory(history);
                 console.log("Posted successfully.");
-                break; // Stop after posting one
             } else {
                 console.error("Failed to post to Discord.");
             }
         } else {
             console.log(`Rejected. Reason: ${analysis.refusalReason || 'Low Score'}`);
         }
+        
+        // CRITICAL: Always mark as processed so we don't loop on it or retry it endlessly
+        history.postedIds.push(candidate.id);
+        history.lastRunDate = new Date().toISOString();
+        saveHistory(history);
+    } else {
+        console.log("Failed to fetch image data. Skipping this meme.");
+        // Mark as processed anyway to avoid stuck loop on broken image
+        history.postedIds.push(candidate.id);
+        saveHistory(history);
     }
     
     console.log("Cycle Complete.");
@@ -122,6 +127,6 @@ server.listen(PORT, () => {
     // Run immediately on start
     runCycle();
     
-    // Then run every hour
+    // Run every hour
     setInterval(runCycle, 1000 * 60 * 60); 
 });

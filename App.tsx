@@ -86,7 +86,7 @@ const App: React.FC = () => {
     if (status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR) return;
 
     setStatus(AnalysisStatus.FETCHING_REDDIT);
-    addLog("Starting curation cycle...");
+    addLog("Starting curation cycle (Single Mode)...");
 
     // Sync dislikes first
     await syncDislikesFromDiscord();
@@ -103,51 +103,47 @@ const App: React.FC = () => {
 
         setStatus(AnalysisStatus.ANALYZING_IMAGES);
         
-        let bestMeme: ScoredMeme | null = null;
-        const candidates = freshMemes.slice(0, 5); 
-
-        for (const candidate of candidates) {
-            // Rate limit guard
-            addLog(`Waiting 10s to respect API rate limits...`);
-            await new Promise(resolve => setTimeout(resolve, 10000));
-
-            addLog(`Analyzing: ${candidate.title}...`);
-            const base64 = await fetchImageAsBase64(candidate.url);
-            
-            if (!base64) {
-                addLog(`Failed to load image for ${candidate.title}`);
-                continue;
-            }
-
-            const analysis = await analyzeMeme(config.geminiApiKey, base64, candidate.title, history.dislikedTopics);
-            
-            if (analysis.isAppropriate && analysis.humorScore >= 7) {
-                bestMeme = { ...candidate, analysis, status: 'analyzed' };
-                break; // Found one!
-            } else {
-                addLog(`Rejected: ${analysis.refusalReason || 'Low score'}`);
-            }
+        // Single Shot Strategy: Only process the #1 candidate
+        const candidate = freshMemes[0];
+        addLog(`Analyzing Top Candidate: ${candidate.title}...`);
+        
+        const base64 = await fetchImageAsBase64(candidate.url);
+        
+        if (!base64) {
+            addLog(`Failed to load image for ${candidate.title}. Skipping.`);
+            // Mark as seen so we don't retry failed image
+            setHistory(prev => ({
+                ...prev,
+                postedIds: [...prev.postedIds, candidate.id]
+            }));
+            setStatus(AnalysisStatus.IDLE);
+            return;
         }
 
-        if (bestMeme) {
+        const analysis = await analyzeMeme(config.geminiApiKey, base64, candidate.title, history.dislikedTopics);
+        
+        // Always mark as processed, regardless of outcome, to prevent loops
+        setHistory(prev => ({
+            ...prev,
+            postedIds: [...prev.postedIds, candidate.id],
+            lastRunDate: new Date().toISOString()
+        }));
+
+        if (analysis.isAppropriate && analysis.humorScore >= 6) {
             setStatus(AnalysisStatus.POSTING);
-            addLog(`Posting "${bestMeme.title}"...`);
-            const success = await postToDiscord(config.discordBotToken, config.discordChannelId, bestMeme);
+            addLog(`Approved (Score: ${analysis.humorScore})! Posting...`);
+            const meme: ScoredMeme = { ...candidate, analysis, status: 'posted' };
+            const success = await postToDiscord(config.discordBotToken, config.discordChannelId, meme);
             
             if (success) {
-                const posted = { ...bestMeme, status: 'posted' as const, postedAt: Date.now() };
+                const posted = { ...meme, postedAt: Date.now() };
                 setPostedMemes(prev => [posted, ...prev]);
-                setHistory(prev => ({
-                    ...prev,
-                    postedIds: [...prev.postedIds, bestMeme!.id],
-                    lastRunDate: new Date().toISOString()
-                }));
                 addLog("Success! Meme posted.");
             } else {
                 addLog("Failed to post to Discord.");
             }
         } else {
-            addLog("No suitable memes found in this batch.");
+            addLog(`Rejected: ${analysis.refusalReason || 'Low score or error'}`);
         }
 
     } catch (e) {

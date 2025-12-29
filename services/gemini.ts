@@ -30,9 +30,9 @@ Return a JSON object with your verdict.
   try {
     const ai = new GoogleGenAI({ apiKey });
     
-    // Using gemini-2.0-flash-exp as it is the current available preview model
+    // Switch to stable Flash model to avoid rate limits
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-1.5-flash',
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -69,10 +69,11 @@ Return a JSON object with your verdict.
     return JSON.parse(text) as AnalysisResult;
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
+    // Return a soft error state
     return {
       isAppropriate: false,
       humorScore: 0,
-      explanation: "AI Analysis failed.",
+      explanation: "AI Analysis failed (likely rate limit or technical error).",
       refusalReason: "Technical Error"
     };
   }
