@@ -1,0 +1,5 @@
+{
+  "name": "Meme Curator AI",
+  "description": "A smart meme curator that fetches top memes from Reddit, filters them using Gemini AI for humor and political alignment, and posts them to Discord.",
+  "requestFramePermissions": []
+}
