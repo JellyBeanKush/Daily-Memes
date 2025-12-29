@@ -30,9 +30,12 @@ Return a JSON object with your verdict.
   try {
     const ai = new GoogleGenAI({ apiKey });
     
-    // Switch to stable Flash model to avoid rate limits
+    // Using gemini-2.0-flash-exp. 
+    // Previous error 404 with gemini-1.5-flash suggests it's unavailable for this key/region.
+    // gemini-2.0-flash-exp returned 429 (Rate Limit) previously, but with the new "Single Mode" logic, 
+    // we should stay within the quota.
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash-exp',
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
