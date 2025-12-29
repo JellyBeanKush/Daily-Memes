@@ -3,8 +3,7 @@ import { Settings as SettingsIcon, Bot, Activity, PauseCircle, PlayCircle, Termi
 import { AppConfig, ScoredMeme, AnalysisStatus, UserHistory } from './types';
 import ConfigModal from './components/ConfigModal';
 import MemeCard from './components/MemeCard';
-import { fetchTopMemes, fetchImageAsBase64 } from './services/reddit';
-import { analyzeMeme } from './services/gemini';
+import { fetchTopMemes } from './services/reddit';
 import { postToDiscord, getRecentDislikes } from './services/discord';
 
 const CONFIG_KEY = 'meme_curator_config';
@@ -18,7 +17,6 @@ const DEFAULT_HISTORY: UserHistory = {
 
 const App: React.FC = () => {
   const [config, setConfig] = useState<AppConfig>({
-    geminiApiKey: '',
     discordBotToken: '',
     discordChannelId: '',
     subreddits: ['memes', 'wholesomememes', 'me_irl', '196', 'ProgrammerHumor', 'BlackPeopleTwitter']
@@ -68,17 +66,14 @@ const App: React.FC = () => {
      if (newDislikes.length > 0) {
          setHistory(prev => {
              const combined = [...new Set([...prev.dislikedTopics, ...newDislikes])];
-             if (combined.length > prev.dislikedTopics.length) {
-                 addLog(`Synced ${combined.length - prev.dislikedTopics.length} new dislikes from Discord reactions.`);
-             }
              return { ...prev, dislikedTopics: combined.slice(-20) };
          });
      }
   };
 
   const runAutoPilotCycle = async () => {
-    if (!config.geminiApiKey || !config.discordBotToken) {
-      addLog("Missing Config. Stopping.");
+    if (!config.discordBotToken) {
+      addLog("Missing Bot Token. Stopping.");
       setIsAutoPilot(false);
       return;
     }
@@ -86,12 +81,11 @@ const App: React.FC = () => {
     if (status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR) return;
 
     setStatus(AnalysisStatus.FETCHING_REDDIT);
-    addLog("Starting curation cycle (Single Mode)...");
-
-    // Sync dislikes first
-    await syncDislikesFromDiscord();
+    addLog("Starting curation cycle (Top Meme Mode)...");
 
     try {
+        await syncDislikesFromDiscord();
+
         const rawMemes = await fetchTopMemes(config.subreddits);
         const freshMemes = rawMemes.filter(m => !history.postedIds.includes(m.id));
         
@@ -101,50 +95,28 @@ const App: React.FC = () => {
             return;
         }
 
-        setStatus(AnalysisStatus.ANALYZING_IMAGES);
-        
-        // Single Shot Strategy: Only process the #1 candidate
+        // Strategy: Only process the #1 candidate
         const candidate = freshMemes[0];
-        addLog(`Analyzing Top Candidate: ${candidate.title}...`);
+        addLog(`Selected Top Candidate: ${candidate.title} (Ups: ${candidate.ups})`);
         
-        const base64 = await fetchImageAsBase64(candidate.url);
+        setStatus(AnalysisStatus.POSTING);
+        const meme: ScoredMeme = { ...candidate, status: 'posted' };
+        const success = await postToDiscord(config.discordBotToken, config.discordChannelId, meme);
         
-        if (!base64) {
-            addLog(`Failed to load image for ${candidate.title}. Skipping.`);
-            // Mark as seen so we don't retry failed image
-            setHistory(prev => ({
-                ...prev,
-                postedIds: [...prev.postedIds, candidate.id]
-            }));
-            setStatus(AnalysisStatus.IDLE);
-            return;
+        if (success) {
+            const posted = { ...meme, postedAt: Date.now() };
+            setPostedMemes(prev => [posted, ...prev]);
+            addLog("Success! Meme posted.");
+        } else {
+            addLog("Failed to post to Discord.");
         }
 
-        const analysis = await analyzeMeme(config.geminiApiKey, base64, candidate.title, history.dislikedTopics);
-        
-        // Always mark as processed, regardless of outcome, to prevent loops
+        // Always mark as processed
         setHistory(prev => ({
             ...prev,
             postedIds: [...prev.postedIds, candidate.id],
             lastRunDate: new Date().toISOString()
         }));
-
-        if (analysis.isAppropriate && analysis.humorScore >= 6) {
-            setStatus(AnalysisStatus.POSTING);
-            addLog(`Approved (Score: ${analysis.humorScore})! Posting...`);
-            const meme: ScoredMeme = { ...candidate, analysis, status: 'posted' };
-            const success = await postToDiscord(config.discordBotToken, config.discordChannelId, meme);
-            
-            if (success) {
-                const posted = { ...meme, postedAt: Date.now() };
-                setPostedMemes(prev => [posted, ...prev]);
-                addLog("Success! Meme posted.");
-            } else {
-                addLog("Failed to post to Discord.");
-            }
-        } else {
-            addLog(`Rejected: ${analysis.refusalReason || 'Low score or error'}`);
-        }
 
     } catch (e) {
         console.error(e);
@@ -184,9 +156,9 @@ const App: React.FC = () => {
                <Bot className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="font-bold text-xl text-white tracking-tight">Meme Curator AI</h1>
+              <h1 className="font-bold text-xl text-white tracking-tight">Meme Curator Bot</h1>
               <p className="text-xs text-gray-400 flex items-center gap-1">
-                 {isAutoPilot ? 'Running in Auto-Pilot' : 'Standby Mode'}
+                 {isAutoPilot ? 'Auto-Poster Active' : 'Standby Mode'}
               </p>
             </div>
           </div>

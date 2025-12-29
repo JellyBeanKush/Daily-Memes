@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScoredMeme } from '../types';
-import { Check, X, ExternalLink, ThumbsDown } from 'lucide-react';
+import { Check, ExternalLink, ThumbsDown } from 'lucide-react';
 
 interface MemeCardProps {
   meme: ScoredMeme;
@@ -12,7 +12,7 @@ const MemeCard: React.FC<MemeCardProps> = ({ meme, onDislike }) => {
 
   return (
     <div className="bg-[#2b2d31] rounded-lg overflow-hidden border border-[#1e1f22] shadow-sm flex flex-col md:flex-row h-full">
-      {/* Image Preview - Smaller now as it's a log */}
+      {/* Image Preview */}
       <div className="w-full md:w-48 h-48 bg-[#1e1f22] shrink-0 relative group">
         <img 
             src={meme.url} 
@@ -43,13 +43,10 @@ const MemeCard: React.FC<MemeCardProps> = ({ meme, onDislike }) => {
                     <p className="text-xs text-gray-500">r/{meme.subreddit}</p>
                 </div>
                 <div className="bg-green-500/10 text-green-400 px-2 py-1 rounded text-xs font-bold border border-green-500/20 flex items-center gap-1">
-                    <Check className="w-3 h-3" /> Score: {meme.analysis?.humorScore}/10
+                    <Check className="w-3 h-3" /> Ups: {meme.ups}
                 </div>
             </div>
             
-            <p className="text-sm text-gray-400 mt-2 bg-[#1e1f22] p-3 rounded border border-white/5 italic">
-                "{meme.analysis?.explanation}"
-            </p>
         </div>
 
         <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
@@ -60,10 +57,10 @@ const MemeCard: React.FC<MemeCardProps> = ({ meme, onDislike }) => {
             <button 
                 onClick={() => onDislike(meme)}
                 className="flex items-center gap-2 text-xs font-medium text-gray-500 hover:text-red-400 transition-colors group"
-                title="Teach AI to avoid memes like this"
+                title="Remove from local view"
             >
                 <ThumbsDown className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                <span>Don't post like this</span>
+                <span>Dismiss</span>
             </button>
         </div>
       </div>

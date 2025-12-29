@@ -1,5 +1,4 @@
 export interface AppConfig {
-  geminiApiKey: string;
   discordBotToken: string;
   discordChannelId: string;
   subreddits: string[];

@@ -1,6 +1,5 @@
 import * as http from 'http';
-import { fetchTopMemes, fetchImageAsBase64 } from './services/reddit';
-import { analyzeMeme } from './services/gemini';
+import { fetchTopMemes } from './services/reddit';
 import { postToDiscord, getRecentDislikes } from './services/discord';
 import { AppConfig, UserHistory, ScoredMeme } from './types';
 import * as fs from 'fs';
@@ -8,7 +7,6 @@ import * as path from 'path';
 
 // --- Configuration ---
 const CONFIG: AppConfig = {
-    geminiApiKey: process.env.API_KEY || '',
     discordBotToken: process.env.DISCORD_TOKEN || '',
     discordChannelId: process.env.DISCORD_CHANNEL_ID || '',
     subreddits: (process.env.SUBREDDITS || 'memes,wholesomememes,me_irl,196').split(',')
@@ -43,22 +41,21 @@ const saveHistory = (history: UserHistory) => {
 
 // --- Bot Logic ---
 const runCycle = async () => {
-    console.log(`[${new Date().toISOString()}] Starting Bot Cycle (Single Mode)...`);
+    console.log(`[${new Date().toISOString()}] Starting Bot Cycle (Top Meme Mode)...`);
     
-    if (!CONFIG.geminiApiKey || !CONFIG.discordBotToken || !CONFIG.discordChannelId) {
-        console.error("Missing Environment Variables (API_KEY, DISCORD_TOKEN, DISCORD_CHANNEL_ID)");
+    if (!CONFIG.discordBotToken || !CONFIG.discordChannelId) {
+        console.error("Missing Environment Variables (DISCORD_TOKEN, DISCORD_CHANNEL_ID)");
         return;
     }
 
     let history = loadHistory();
 
-    // 1. Sync Dislikes from Discord Reactions
-    console.log("Syncing dislikes from Discord...");
-    const newDislikes = await getRecentDislikes(CONFIG.discordBotToken, CONFIG.discordChannelId);
-    if (newDislikes.length > 0) {
-        const unique = [...new Set([...history.dislikedTopics, ...newDislikes])].slice(-20);
-        history.dislikedTopics = unique;
-        console.log(`Updated dislikes list. Count: ${unique.length}`);
+    // 1. Sync Dislikes from Discord Reactions (Optional now since we aren't analyzing, but good for tracking)
+    // We keep this to maintain data integrity but it won't affect selection in this simplified mode
+    try {
+        await getRecentDislikes(CONFIG.discordBotToken, CONFIG.discordChannelId);
+    } catch (e) { 
+        // ignore errors here 
     }
 
     // 2. Fetch Candidates
@@ -72,43 +69,24 @@ const runCycle = async () => {
         return;
     }
 
-    // 3. Analyze ONLY the #1 Top Meme
-    // Strategy: Grab the best one. If it passes, post it. If it fails, mark it as "seen" (postedIds) so we skip it next time.
-    // This limits us to 1 API call per cycle, heavily reducing rate limits.
+    // 3. Select ONLY the #1 Top Meme
     const candidate = freshMemes[0];
+    console.log(`Selected Top Candidate: ${candidate.title} (Ups: ${candidate.ups})`);
     
-    console.log(`Analyzing Top Candidate: ${candidate.title}`);
+    // Direct Post
+    const meme: ScoredMeme = { ...candidate, status: 'posted' };
+    const success = await postToDiscord(CONFIG.discordBotToken, CONFIG.discordChannelId, meme);
     
-    const base64 = await fetchImageAsBase64(candidate.url);
-
-    if (base64) {
-        const analysis = await analyzeMeme(CONFIG.geminiApiKey, base64, candidate.title, history.dislikedTopics);
-
-        if (analysis.isAppropriate && analysis.humorScore >= 6) { // Slightly lowered threshold since we are only checking one
-            console.log(`Approved! Score: ${analysis.humorScore}. Posting...`);
-            const meme: ScoredMeme = { ...candidate, analysis, status: 'posted' };
-            
-            const success = await postToDiscord(CONFIG.discordBotToken, CONFIG.discordChannelId, meme);
-            
-            if (success) {
-                console.log("Posted successfully.");
-            } else {
-                console.error("Failed to post to Discord.");
-            }
-        } else {
-            console.log(`Rejected. Reason: ${analysis.refusalReason || 'Low Score'}`);
-        }
-        
-        // CRITICAL: Always mark as processed so we don't loop on it or retry it endlessly
-        history.postedIds.push(candidate.id);
-        history.lastRunDate = new Date().toISOString();
-        saveHistory(history);
+    if (success) {
+        console.log("Posted successfully.");
     } else {
-        console.log("Failed to fetch image data. Skipping this meme.");
-        // Mark as processed anyway to avoid stuck loop on broken image
-        history.postedIds.push(candidate.id);
-        saveHistory(history);
+        console.error("Failed to post to Discord.");
     }
+    
+    // Always mark as processed so we don't duplicate
+    history.postedIds.push(candidate.id);
+    history.lastRunDate = new Date().toISOString();
+    saveHistory(history);
     
     console.log("Cycle Complete.");
 };

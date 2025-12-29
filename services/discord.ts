@@ -15,14 +15,14 @@ export const postToDiscord = async (botToken: string, channelId: string, meme: S
   if (!botToken || !channelId) return false;
 
   const payload = {
-    content: `**${meme.title}**\n*Curated from r/${meme.subreddit} (Score: ${meme.analysis?.humorScore}/10)*`,
+    content: `**${meme.title}**\n*Top trend from r/${meme.subreddit}*`,
     embeds: [
       {
         image: {
           url: meme.url,
         },
         footer: {
-          text: `AI Analysis: ${meme.analysis?.explanation.substring(0, 100)}...`
+          text: `Upvotes: ${meme.ups} • Posted via Meme Curator`
         },
         color: 5814783 // Discord Blurple-ish
       },
