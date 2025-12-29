@@ -5,6 +5,7 @@ export const fetchTopMemes = async (subreddits: string[]): Promise<RedditPost[]>
   
   const promises = subreddits.map(async (sub) => {
     try {
+      // For Reddit API, we usually don't need a proxy if using .json, but sometimes we do in strict browsers.
       const response = await fetch(`https://www.reddit.com/r/${sub}/top.json?t=day&limit=10`, {
         headers: {
             'User-Agent': 'MemeCuratorBot/1.0'
@@ -53,20 +54,27 @@ export const fetchImageAsBase64 = async (url: string): Promise<string | null> =>
     // Detect if running in a browser environment
     const isBrowser = typeof window !== 'undefined' && typeof (globalThis as any).process === 'undefined';
     
-    // In the browser, we MUST use a proxy to bypass CORS restrictions.
-    // On the backend (Render), we can fetch directly.
-    const fetchUrl = isBrowser 
-        ? `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` 
-        : url;
+    let fetchUrl = url;
 
-    const response = await fetch(fetchUrl, {
-        headers: {
-            'User-Agent': 'MemeCuratorBot/1.0'
-        }
+    // In the browser, we MUST use a proxy to bypass CORS restrictions.
+    if (isBrowser) {
+        // Try corsproxy.io without encoding first (common pattern)
+        fetchUrl = `https://corsproxy.io/?${url}`;
+    }
+
+    let response = await fetch(fetchUrl, {
+        headers: { 'User-Agent': 'MemeCuratorBot/1.0' }
     });
 
+    // Fallback if first proxy fails
+    if (isBrowser && !response.ok) {
+        console.warn(`Primary proxy failed for ${url}, trying fallback...`);
+        fetchUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        response = await fetch(fetchUrl);
+    }
+
     if (!response.ok) {
-        console.error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        console.warn(`Failed to fetch image: ${response.status} (URL: ${url})`);
         return null;
     }
 

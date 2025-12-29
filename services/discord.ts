@@ -1,6 +1,15 @@
 import { ScoredMeme } from '../types';
 
 const BASE_URL = 'https://discord.com/api/v10';
+const PROXY_URL = 'https://corsproxy.io/?';
+
+const getFetchUrl = (endpoint: string): string => {
+    const isBrowser = typeof window !== 'undefined' && typeof (globalThis as any).process === 'undefined';
+    const target = `${BASE_URL}${endpoint}`;
+    // In browser, we must use a proxy. 
+    // passing the raw URL often works better for corsproxy.io than encoded components in some contexts
+    return isBrowser ? `${PROXY_URL}${target}` : target;
+};
 
 export const postToDiscord = async (botToken: string, channelId: string, meme: ScoredMeme): Promise<boolean> => {
   if (!botToken || !channelId) return false;
@@ -21,7 +30,8 @@ export const postToDiscord = async (botToken: string, channelId: string, meme: S
   };
 
   try {
-    const response = await fetch(`${BASE_URL}/channels/${channelId}/messages`, {
+    const url = getFetchUrl(`/channels/${channelId}/messages`);
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Authorization": `Bot ${botToken}`,
@@ -47,13 +57,17 @@ export const getRecentDislikes = async (botToken: string, channelId: string): Pr
 
     try {
         // Fetch last 20 messages
-        const response = await fetch(`${BASE_URL}/channels/${channelId}/messages?limit=20`, {
+        const url = getFetchUrl(`/channels/${channelId}/messages?limit=20`);
+        const response = await fetch(url, {
             headers: {
                 "Authorization": `Bot ${botToken}`,
             },
         });
 
-        if (!response.ok) return [];
+        if (!response.ok) {
+            // Silently fail in browser if proxy isn't working for GET, to avoid spamming logs
+            return [];
+        }
 
         const messages = await response.json();
         const dislikes: string[] = [];
@@ -77,7 +91,8 @@ export const getRecentDislikes = async (botToken: string, channelId: string): Pr
 
         return dislikes;
     } catch (e) {
-        console.error("Failed to check reactions", e);
+        // Suppress full error stack in console for cleaner logs during polling
+        console.warn("Could not check Discord reactions (likely network/CORS issue)");
         return [];
     }
 };
